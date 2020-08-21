@@ -43,6 +43,7 @@ func main() {
 		TCP        bool
 		Plugin     string
 		PluginOpts string
+		Proxy      string
 	}
 
 	flag.BoolVar(&config.Verbose, "verbose", false, "verbose mode")
@@ -63,6 +64,7 @@ func main() {
 	flag.BoolVar(&flags.UDP, "udp", false, "(server-only) enable UDP support")
 	flag.BoolVar(&flags.TCP, "tcp", true, "(server-only) enable TCP support")
 	flag.BoolVar(&config.TCPCork, "tcpcork", false, "coalesce writing first few packets")
+	flag.StringVar(&flags.Proxy, "proxy", "", "Set Proxy. (e.g., \"http://127.0.0.1:8080\")")
 	flag.DurationVar(&config.UDPTimeout, "udptimeout", 5*time.Minute, "UDP tunnel timeout")
 	flag.Parse()
 
@@ -124,24 +126,24 @@ func main() {
 		if flags.TCPTun != "" {
 			for _, tun := range strings.Split(flags.TCPTun, ",") {
 				p := strings.Split(tun, "=")
-				go tcpTun(p[0], addr, p[1], ciph.StreamConn)
+				go tcpTun(p[0], addr, p[1], ciph.StreamConn, flags.Proxy)
 			}
 		}
 
 		if flags.Socks != "" {
 			socks.UDPEnabled = flags.UDPSocks
-			go socksLocal(flags.Socks, addr, ciph.StreamConn)
+			go socksLocal(flags.Socks, addr, ciph.StreamConn, flags.Proxy)
 			if flags.UDPSocks {
 				go udpSocksLocal(flags.Socks, udpAddr, ciph.PacketConn)
 			}
 		}
 
 		if flags.RedirTCP != "" {
-			go redirLocal(flags.RedirTCP, addr, ciph.StreamConn)
+			go redirLocal(flags.RedirTCP, addr, ciph.StreamConn, flags.Proxy)
 		}
 
 		if flags.RedirTCP6 != "" {
-			go redir6Local(flags.RedirTCP6, addr, ciph.StreamConn)
+			go redir6Local(flags.RedirTCP6, addr, ciph.StreamConn, flags.Proxy)
 		}
 	}
 
@@ -176,7 +178,7 @@ func main() {
 			go udpRemote(udpAddr, ciph.PacketConn)
 		}
 		if flags.TCP {
-			go tcpRemote(addr, ciph.StreamConn)
+			go tcpRemote(addr, ciph.StreamConn, flags.Proxy)
 		}
 	}
 

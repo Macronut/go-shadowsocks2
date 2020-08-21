@@ -16,13 +16,13 @@ func getOrigDst(c net.Conn, ipv6 bool) (socks.Addr, error) {
 }
 
 // Listen on addr for netfilter redirected TCP connections
-func redirLocal(addr, server string, shadow func(net.Conn) net.Conn) {
+func redirLocal(addr, server string, shadow func(net.Conn) net.Conn, proxy string) {
 	logf("TCP redirect %s <-> %s", addr, server)
-	tcpLocal(addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return getOrigDst(c, false) })
+	tcpLocal(addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return getOrigDst(c, false) }, proxy)
 }
 
 // Listen on addr for netfilter redirected TCP IPv6 connections.
-func redir6Local(addr, server string, shadow func(net.Conn) net.Conn) {
+func redir6Local(addr, server string, shadow func(net.Conn) net.Conn, proxy string) {
 	logf("TCP6 redirect %s <-> %s", addr, server)
-	tcpLocal(addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return getOrigDst(c, true) })
+	tcpLocal(addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return getOrigDst(c, true) }, proxy)
 }

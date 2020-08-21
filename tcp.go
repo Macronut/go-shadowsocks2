@@ -2,9 +2,11 @@ package main
 
 import (
 	"bufio"
+	"fmt"
 	"io"
 	"io/ioutil"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -12,24 +14,24 @@ import (
 )
 
 // Create a SOCKS server listening on addr and proxy to server.
-func socksLocal(addr, server string, shadow func(net.Conn) net.Conn) {
+func socksLocal(addr, server string, shadow func(net.Conn) net.Conn, proxy string) {
 	logf("SOCKS proxy %s <-> %s", addr, server)
-	tcpLocal(addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return socks.Handshake(c) })
+	tcpLocal(addr, server, shadow, func(c net.Conn) (socks.Addr, error) { return socks.Handshake(c) }, proxy)
 }
 
 // Create a TCP tunnel from addr to target via server.
-func tcpTun(addr, server, target string, shadow func(net.Conn) net.Conn) {
+func tcpTun(addr, server, target string, shadow func(net.Conn) net.Conn, proxy string) {
 	tgt := socks.ParseAddr(target)
 	if tgt == nil {
 		logf("invalid target address %q", target)
 		return
 	}
 	logf("TCP tunnel %s <-> %s <-> %s", addr, server, target)
-	tcpLocal(addr, server, shadow, func(net.Conn) (socks.Addr, error) { return tgt, nil })
+	tcpLocal(addr, server, shadow, func(net.Conn) (socks.Addr, error) { return tgt, nil }, proxy)
 }
 
 // Listen on addr and proxy to server to reach target from getAddr.
-func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(net.Conn) (socks.Addr, error)) {
+func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(net.Conn) (socks.Addr, error), proxy string) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		logf("failed to listen on %s: %v", addr, err)
@@ -66,7 +68,27 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 				return
 			}
 
-			rc, err := net.Dial("tcp", server)
+			var rc net.Conn
+			if proxy != "" {
+				if strings.HasPrefix(proxy, "http://") {
+					rc, err = net.Dial("tcp", proxy[7:])
+					request := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", server)
+					_, err = rc.Write([]byte(request))
+					var response [128]byte
+					var n int
+					n, err = rc.Read(response[:])
+					fmt.Println(string(response[:n]))
+					if !strings.HasPrefix(string(response[:n]), "HTTP/1.1 200 ") {
+						logf("failed to connect to server %v: %v", server, string(response[:n]))
+						return
+					}
+				} else {
+					logf("invalid proxy server %v: %v", server, err)
+					return
+				}
+			} else {
+				rc, err = net.Dial("tcp", server)
+			}
 			if err != nil {
 				logf("failed to connect to server %v: %v", server, err)
 				return
@@ -95,7 +117,7 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 }
 
 // Listen on addr for incoming connections.
-func tcpRemote(addr string, shadow func(net.Conn) net.Conn) {
+func tcpRemote(addr string, shadow func(net.Conn) net.Conn, proxy string) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		logf("failed to listen on %s: %v", addr, err)
