@@ -120,7 +120,7 @@ func udpSocksLocal(laddr, server string, shadow func(net.PacketConn) net.PacketC
 }
 
 // Listen on addr for encrypted packets and basically do UDP NAT.
-func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn) {
+func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, dns string) {
 	c, err := net.ListenPacket("udp", addr)
 	if err != nil {
 		logf("UDP remote listen error: %v", err)
@@ -154,18 +154,33 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn) {
 
 		payload := buf[len(tgtAddr):n]
 
-		pc := nm.Get(raddr.String())
-		if pc == nil {
+		var pc net.PacketConn
+		if tgtUDPAddr.Port == 53 {
+			dnsserver, err := net.ResolveUDPAddr("udp", dns)
+			if err != nil {
+				logf("Invalid DNS: %v", err)
+				continue
+			}
 			pc, err = net.ListenPacket("udp", "")
 			if err != nil {
 				logf("UDP remote listen error: %v", err)
 				continue
 			}
-
-			nm.Add(raddr, c, pc, remoteServer)
+			nm.DNS(raddr, *tgtUDPAddr, c, pc)
+			_, err = pc.WriteTo(payload, dnsserver)
+		} else {
+			pc = nm.Get(raddr.String())
+			if pc == nil {
+				pc, err = net.ListenPacket("udp", "")
+				if err != nil {
+					logf("UDP remote listen error: %v", err)
+					continue
+				}
+				nm.Add(raddr, c, pc, remoteServer)
+			}
+			_, err = pc.WriteTo(payload, tgtUDPAddr) // accept only UDPAddr despite the signature
 		}
 
-		_, err = pc.WriteTo(payload, tgtUDPAddr) // accept only UDPAddr despite the signature
 		if err != nil {
 			logf("UDP remote write error: %v", err)
 			continue
@@ -220,6 +235,25 @@ func (m *natmap) Add(peer net.Addr, dst, src net.PacketConn, role mode) {
 		if pc := m.Del(peer.String()); pc != nil {
 			pc.Close()
 		}
+	}()
+}
+
+func (m *natmap) DNS(peer net.Addr, tgt net.UDPAddr, dst, src net.PacketConn) {
+	go func() {
+		defer src.Close()
+
+		buf := make([]byte, udpBufSize)
+
+		src.SetReadDeadline(time.Now().Add(m.timeout))
+		n, _, err := src.ReadFrom(buf)
+		if err != nil {
+			return
+		}
+
+		srcAddr := socks.ParseAddr(tgt.String())
+		copy(buf[len(srcAddr):], buf[:n])
+		copy(buf, srcAddr)
+		dst.WriteTo(buf[:len(srcAddr)+n], peer)
 	}()
 }
 

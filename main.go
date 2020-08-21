@@ -43,6 +43,7 @@ func main() {
 		TCP        bool
 		Plugin     string
 		PluginOpts string
+		DNS        string
 		Proxy      string
 	}
 
@@ -64,6 +65,7 @@ func main() {
 	flag.BoolVar(&flags.UDP, "udp", false, "(server-only) enable UDP support")
 	flag.BoolVar(&flags.TCP, "tcp", true, "(server-only) enable TCP support")
 	flag.BoolVar(&config.TCPCork, "tcpcork", false, "coalesce writing first few packets")
+	flag.StringVar(&flags.DNS, "dns", "", "Set DNS. (e.g., \"8.8.8.8:53\")")
 	flag.StringVar(&flags.Proxy, "proxy", "", "Set Proxy. (e.g., \"http://127.0.0.1:8080\")")
 	flag.DurationVar(&config.UDPTimeout, "udptimeout", 5*time.Minute, "UDP tunnel timeout")
 	flag.Parse()
@@ -175,7 +177,7 @@ func main() {
 		}
 
 		if flags.UDP {
-			go udpRemote(udpAddr, ciph.PacketConn)
+			go udpRemote(udpAddr, ciph.PacketConn, flags.DNS)
 		}
 		if flags.TCP {
 			go tcpRemote(addr, ciph.StreamConn, flags.Proxy)
