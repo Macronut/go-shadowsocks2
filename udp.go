@@ -155,7 +155,7 @@ func udpRemote(addr string, shadow func(net.PacketConn) net.PacketConn, dns stri
 		payload := buf[len(tgtAddr):n]
 
 		var pc net.PacketConn
-		if tgtUDPAddr.Port == 53 {
+		if tgtUDPAddr.Port == 53 && dns != "" {
 			dnsserver, err := net.ResolveUDPAddr("udp", dns)
 			if err != nil {
 				logf("Invalid DNS: %v", err)
