@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"encoding/base64"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -166,33 +167,34 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn, proxy string, dns st
 				return
 			}
 
-			var dst string
 			if tgt.Port() == 53 && dns != "" {
-				dst = dns
-			} else {
-				dst = tgt.String()
+				err := relayDNS(sc, dns)
+				if err != nil {
+					logf("dns failed: %v", err)
+				}
+				return
 			}
 
 			var rc net.Conn
 			if proxy != "" {
 				if strings.HasPrefix(proxy, "http://") {
 					rc, err = net.Dial("tcp", proxy[7:])
-					request := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", dst)
+					request := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", tgt.String())
 					_, err = rc.Write([]byte(request))
 					var response [128]byte
 					var n int
 					n, err = rc.Read(response[:])
 					fmt.Println(string(response[:n]))
 					if !strings.HasPrefix(string(response[:n]), "HTTP/1.1 200 ") {
-						logf("failed to connect to server %v: %v", dst, string(response[:n]))
+						logf("failed to connect to server %v: %v", tgt.String(), string(response[:n]))
 						return
 					}
 				} else {
-					logf("invalid proxy server %v: %v", dst, err)
+					logf("invalid proxy server %v: %v", tgt.String(), err)
 					return
 				}
 			} else {
-				rc, err = net.Dial("tcp", dst)
+				rc, err = net.Dial("tcp", tgt.String())
 			}
 
 			if err != nil {
@@ -232,6 +234,35 @@ func relay(left, right net.Conn) error {
 	if err1 != nil {
 		err = err1
 	}
+	return err
+}
+
+func relayDNS(sc net.Conn, dns string) error {
+	var wait = 5 * time.Second
+	sc.SetReadDeadline(time.Now().Add(wait))
+
+	var b [1460]byte
+	n, err := sc.Read(b[:])
+	if err != nil {
+		return err
+	}
+
+	rc, err := net.Dial("udp", dns)
+	defer rc.Close()
+	rc.SetReadDeadline(time.Now().Add(wait))
+
+	_, err = rc.Write(b[2:n])
+	if err != nil {
+		return err
+	}
+
+	n, err = rc.Read(b[2:])
+	if err != nil {
+		return err
+	}
+
+	binary.BigEndian.PutUint16(b[:], uint16(n))
+	_, err = sc.Write(b[:n+2])
 	return err
 }
 
