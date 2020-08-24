@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -82,6 +83,20 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 						logf("failed to connect to server %v: %v", server, string(response[:n]))
 						return
 					}
+				} else if strings.HasPrefix(proxy, "socks://") {
+					// TODO
+				} else if strings.HasPrefix(proxy, "base64://") {
+					request, err := base64.StdEncoding.DecodeString(proxy[9:])
+					if err != nil {
+						logf("invalid proxy %v: %v", proxy, err)
+						return
+					}
+					rc, err = net.Dial("tcp", server)
+					if err != nil {
+						logf("failed to connect to server %v: %v", server, err)
+						return
+					}
+					_, err = rc.Write([]byte(request))
 				} else {
 					logf("invalid proxy server %v: %v", server, err)
 					return
@@ -117,7 +132,7 @@ func tcpLocal(addr, server string, shadow func(net.Conn) net.Conn, getAddr func(
 }
 
 // Listen on addr for incoming connections.
-func tcpRemote(addr string, shadow func(net.Conn) net.Conn, proxy string) {
+func tcpRemote(addr string, shadow func(net.Conn) net.Conn, proxy string, dns string) {
 	l, err := net.Listen("tcp", addr)
 	if err != nil {
 		logf("failed to listen on %s: %v", addr, err)
@@ -151,7 +166,13 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn, proxy string) {
 				return
 			}
 
-			rc, err := net.Dial("tcp", tgt.String())
+			var rc net.Conn
+			if tgt.Port() == 53 && dns != "" {
+				rc, err = net.Dial("tcp", dns)
+			} else {
+				rc, err = net.Dial("tcp", tgt.String())
+			}
+
 			if err != nil {
 				logf("failed to connect to target: %v", err)
 				return
