@@ -166,11 +166,33 @@ func tcpRemote(addr string, shadow func(net.Conn) net.Conn, proxy string, dns st
 				return
 			}
 
-			var rc net.Conn
+			var dst string
 			if tgt.Port() == 53 && dns != "" {
-				rc, err = net.Dial("tcp", dns)
+				dst = dns
 			} else {
-				rc, err = net.Dial("tcp", tgt.String())
+				dst = tgt.String()
+			}
+
+			var rc net.Conn
+			if proxy != "" {
+				if strings.HasPrefix(proxy, "http://") {
+					rc, err = net.Dial("tcp", proxy[7:])
+					request := fmt.Sprintf("CONNECT %s HTTP/1.1\r\n\r\n", dst)
+					_, err = rc.Write([]byte(request))
+					var response [128]byte
+					var n int
+					n, err = rc.Read(response[:])
+					fmt.Println(string(response[:n]))
+					if !strings.HasPrefix(string(response[:n]), "HTTP/1.1 200 ") {
+						logf("failed to connect to server %v: %v", dst, string(response[:n]))
+						return
+					}
+				} else {
+					logf("invalid proxy server %v: %v", dst, err)
+					return
+				}
+			} else {
+				rc, err = net.Dial("tcp", dst)
 			}
 
 			if err != nil {

@@ -177,7 +177,7 @@ func main() {
 		}
 
 		if flags.UDP {
-			go udpRemote(udpAddr, ciph.PacketConn, flags.DNS)
+			go udpRemote(udpAddr, ciph.PacketConn, flags.Proxy, flags.DNS)
 		}
 		if flags.TCP {
 			go tcpRemote(addr, ciph.StreamConn, flags.Proxy, flags.DNS)
